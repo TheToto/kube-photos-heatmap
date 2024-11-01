@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kube Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+  <style>
+    #map {
+      height: 100vh;
+    }
+
+    img.leaflet-tile {
+      image-rendering: pixelated;
+    }
+
+    .leaflet-control-custom {
+      background-color: white;
+      padding: 5px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+  <script>
+    const root = "https://thetoto.github.io/kube-photos-archive";
+
+    const tileSize = 256;
+
+    const map = L.map('map', {
+      center: [0, 0],
+      zoom: 5,
+      crs: L.CRS.Simple,
+      minZoom: -30,
+      maxZoom: 7,
+      zoomSnap: 0.1,
+      zoomDelta: 0.1
+    });
+
+    L.tileLayer('output_images/zoom_level_{z}/chunk_{x}_{y}.png', {
+      tileSize: tileSize,
+      minNativeZoom: 0,
+      maxNativeZoom: 5,
+    }).addTo(map);
+
+
+    fetch(`${root}/photos.json`)
+      .then(response => response.json())
+      .then(data => {
+        const points = data.map(point => {
+          if (point == null || point.pos == null || point.pos[0] == null || point.pos[1] == null) {
+            return null;
+          }
+
+          let adjustedPos = [-point.pos[1] - 0.5, point.pos[0] + 0.5];
+          return [...adjustedPos, 0.004];
+        }).filter(p => p != null);
+        const heat = L.heatLayer(points, { radius: 24, minOpacity: 0.4, max: 0.7 }).addTo(map);
+
+        const markers = L.markerClusterGroup();
+        data.forEach(point => {
+          if (point == null || point.pos == null || point.pos[0] == null || point.pos[1] == null) {
+            return null;
+          }
+
+          let adjustedPos = [-point.pos[1] - 0.5, point.pos[0] + 0.5];
+          const marker = L.marker(adjustedPos);
+          let imageSrc = `${root}/photos/${point.id}.webp`;
+          marker.bindPopup(`<div><p>${point.name}</br>${point.userName}</br>${point.date}</br>[${point.pos[0]}][${point.pos[1]}]</br></p><a href="${imageSrc}" target="_blank"><img src="${imageSrc}" alt="KubePhoto" style="width: 200px; height: auto;"></a></div>`);
+          markers.addLayer(marker);
+        });
+
+        let forceCluster = false;
+        let forceHeatMap = false;
+        let hideAll = false;
+
+        var updateLayers = () => {
+          if (hideAll) {
+            if (map.hasLayer(markers)) {
+              map.removeLayer(markers);
+            }
+            if (map.hasLayer(heat)) {
+              map.removeLayer(heat);
+            }
+          }
+          else if (forceCluster) {
+            if (map.hasLayer(heat)) {
+              map.removeLayer(heat);
+            }
+            if (!map.hasLayer(markers)) {
+              map.addLayer(markers);
+            }
+          }
+          else if (forceHeatMap) {
+            if (map.hasLayer(markers)) {
+              map.removeLayer(markers);
+            }
+            if (!map.hasLayer(heat)) {
+              map.addLayer(heat);
+            }
+          } else if (map.getZoom() >= 6.5) {
+            if (map.hasLayer(heat)) {
+              map.removeLayer(heat);
+            }
+            if (!map.hasLayer(markers)) {
+              map.addLayer(markers);
+            }
+          } else {
+            if (map.hasLayer(markers)) {
+              map.removeLayer(markers);
+            }
+            if (!map.hasLayer(heat)) {
+              map.addLayer(heat);
+            }
+          }
+        }
+
+        map.on('zoomend', function () {
+          console.log(map.getZoom());
+          updateLayers();
+        });
+
+        var forceHeatMapButton = L.Control.extend({
+          options: {
+            position: 'topright'
+          },
+          onAdd: function (map) {
+            var container = L.DomUtil.create('div', 'leaflet-control-custom');
+            container.innerHTML = 'Show Heatmap';
+
+            container.onclick = function () {
+              if (forceHeatMap) {
+                forceHeatMap = false;
+              } else {
+                forceHeatMap = true;
+                forceCluster = false;
+                hideAll = false;
+              }
+
+              updateLayers();
+            }
+
+            return container;
+          }
+        });
+
+        var forceClusterButton = L.Control.extend({
+          options: {
+            position: 'topright'
+          },
+          onAdd: function (map) {
+            var container = L.DomUtil.create('div', 'leaflet-control-custom');
+            container.innerHTML = 'Show Cluster';
+
+            container.onclick = function () {
+              if (forceCluster) {
+                forceCluster = false;
+              } else {
+                forceCluster = true;
+                forceHeatMap = false;
+                hideAll = false;
+              }
+
+              updateLayers();
+            }
+
+            return container;
+          }
+        });
+
+        var reset = L.Control.extend({
+          options: {
+            position: 'topright'
+          },
+          onAdd: function (map) {
+            var container = L.DomUtil.create('div', 'leaflet-control-custom');
+            container.innerHTML = 'Reset';
+
+            container.onclick = function () {
+              forceCluster = false;
+              forceHeatMap = false;
+              hideAll = false;
+
+              updateLayers();
+            }
+
+            return container;
+          }
+        });
+
+        var hideAllButton = L.Control.extend({
+          options: {
+            position: 'topright'
+          },
+          onAdd: function (map) {
+            var container = L.DomUtil.create('div', 'leaflet-control-custom');
+            container.innerHTML = 'Hide All';
+
+            container.onclick = function () {
+              hideAll = true;
+              forceCluster = false;
+              forceHeatMap = false;
+
+              updateLayers();
+            }
+
+            return container;
+          }
+        });
+
+        map.addControl(new forceHeatMapButton());
+        map.addControl(new forceClusterButton());
+        map.addControl(new hideAllButton());
+        map.addControl(new reset());
+      })
+      .catch(error => console.error('Erreur lors du chargement des points:', error));
+
+  </script>
+</body>
+
+</html>
