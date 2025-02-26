@@ -30,7 +30,8 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
-  <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>*
+  <script src="https://unpkg.com/jszip@3.2.0/dist/jszip.min.js"></script>
   <script>
     const root = "https://thetoto.github.io/kube-photos-archive";
 
@@ -221,6 +222,37 @@
         map.addControl(new forceClusterButton());
         map.addControl(new hideAllButton());
         map.addControl(new reset());
+
+        window.downloadZip = function(x, y) {
+          const zip = new JSZip();
+          const folder = zip.folder('images');
+          const promises = [];
+          data.forEach(point => {
+            if (point == null || point.pos == null || point.pos[0] != x || point.pos[1] != y) {
+              return null;
+            }
+            const url = `${root}/photos/${point.id}.webp`;
+            const promise = fetch(url)
+              .then(response => response.blob())
+              .then(blob => {
+                const filename = `${point.id}_${point.userName}_${point.name}`.replace(/[^a-z0-9]/gi, '_');
+                folder.file(`${filename}.txt`, JSON.stringify(point, null, 2));
+                folder.file(`${filename}.webp`, blob);
+                console.log("Downloaded", filename);
+              });
+            promises.push(promise);
+          });
+
+          Promise.all(promises).then(() => {
+            zip.generateAsync({ type: "blob" }).then(function (content) {
+              console.log("Generated zip");
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(content);
+              a.download = `images_${x}_${y}.zip`;
+              a.click();
+            });
+          });
+        };
       })
       .catch(error => console.error('Erreur lors du chargement des points:', error));
 
